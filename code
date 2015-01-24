@@ -1,0 +1,110 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Fri Dec 27 
+@author: hussein
+"""
+
+
+
+#%%
+##Please update the absolute path of the project files here
+absPath= 'C://Users//hussein//Documents//DMKM//CaseStudy_Italy//data_Bike//'
+import pandas as pd
+import numpy as np
+from sklearn.externals import joblib
+
+from sklearn.ensemble import RandomForestRegressor
+RFEstR=RandomForestRegressor() # Estimator for Registered rents count
+RFEstC=RandomForestRegressor() # for Casual users rents count
+
+# Here we define a function for preprocessing the data
+def prepros (t): 
+   # Adding date feilds
+    datt=pd.to_datetime(t['datetime'])
+    t['datetime']=datt
+    t['hour']=t.datetime.apply(lambda x: x.hour) 
+    t['month']=t.datetime.apply(lambda x: x.month) 
+    t['day']=t.datetime.apply(lambda x: x.day) 
+    t['year']=t.datetime.apply(lambda x: x.year)
+    t['dayOfWeek']=t.datetime.apply(lambda x:x.weekday())
+    # calculating the Dew_Point temp from humidity and temp    
+    temp=np.array(t['temp'].values)
+    humid=np.array(t['humidity'].values)
+    t['dew']=np.power(humid,(1.0/8.0))*(112+0.9*temp) + 0.1*temp -112
+    
+    td=t.values[:,1:] # geting all fields except the datetime feild
+    pddata=td.astype(dtype=float) # transform the values into float numbers
+    return pddata
+    
+## read training data
+train = pd.read_csv('C://Users//hussein//Documents//DMKM//CaseStudy_Italy//data_Bike//train.csv')
+ppdata=prepros(train) # calling the data preprocessing for the training data
+
+tdata=ppdata[:,(0,1,2,3,4,5,6,7,11,12,13,14,15,16)] # taking out the predicted fields (Registered, casual and count)
+
+#Spliting the data for Cross Validation
+from sklearn import cross_validation
+a_train, a_test= cross_validation.train_test_split(ppdata, test_size=0.3)
+tdtrain=a_train[:,(0,1,2,3,4,5,6,7,11,12,13,14,15,16)]
+tdtest=a_test[:,(0,1,2,3,4,5,6,7,11,12,13,14,15,16)]
+
+#Define scoring/error function that matching the scoring of the competition
+from sklearn.metrics import  make_scorer
+
+def my_custom_loss_func(ground_truth, predictions):  
+
+    diff = (np.log(ground_truth+1) - np.log(predictions+1))**2
+    return np.sqrt(np.mean(diff))
+     
+my_custom_scorer = make_scorer(my_custom_loss_func, greater_is_better=False)
+
+#Random Forrest with SearchGrid using the new defined scoring function
+
+from sklearn import grid_search
+
+def buildModel (parms,RFEst,train,T): # T takes either Registered or Casual
+    gsRFEst = grid_search.GridSearchCV(cv=3,estimator=RFEst,param_grid=parms, scoring=my_custom_scorer)
+    gsRFEst.fit(tdtrain,train) # fitting on the Registered field 
+    joblib.dump(gsRFEst, absPath+T+'_model.pkl', compress=9) # scoring the found model
+
+# for Registered
+
+parmsRFR= {'n_estimators': [230,245,240,235,250], 'max_features': [12,13,14], 'max_depth': [26,27,28,29,30], 'min_samples_leaf':[1,2], 'n_jobs':[-1]} 
+buildModel (parmsRFR,RFEstR,a_train[:,9],'Registered') #learning the registered count model
+gsRFEstR = joblib.load(absPath+'Registered_model.pkl')
+scorGSRFR= gsRFEstR.score(tdtest,a_test[:,9]) # Measureing the scoring on the test data
+# Best parameters and scoring the found model (Registered)
+bestPR=gsRFEstR.best_params_
+scoreDictR=gsRFEstR.grid_scores_
+
+
+# for Casual
+parmsRFC= {'n_estimators': [280,290,300,310,320], 'max_features': [12,13,14], 'max_depth': [26,27,28,29,30], 'min_samples_leaf':[1,2], 'n_jobs':[-1]} 
+
+buildModel (parmsRFR,RFEstC,a_train[:,8],'Casual') # learning the Casual count Model
+gsRFEstC = joblib.load(absPath+'Casual_model.pkl')
+
+scorGSRFC= gsRFEstC.score(tdtest,a_test[:,8]) # Measureing the scoring on the test data
+# Best parameters and scoring the found model (Casual)
+bestPC=gsRFEstC.best_params_ 
+scoreDictC=gsRFEstC.grid_scores_
+
+# read test data 
+test = pd.read_csv(absPath+'test.csv')
+tsdata=prepros(test)
+
+tmpR= gsRFEstR.predict(tsdata[:,0:])
+
+#tmpresult Casual
+tmpC= gsRFEstC.predict(tsdata[:,0:])
+
+
+#Adding R and C for final results
+tmp=tmpR+tmpC
+tmpresult=tmp.astype(dtype=int)
+
+## read and write submittion
+subm= pd.read_csv(absPath+'sampleSubmission.csv')
+subm ['count']=tmpresult
+
+subm.to_csv(absPath+'sub2014.csv',index=False)
