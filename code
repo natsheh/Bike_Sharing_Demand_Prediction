@@ -14,7 +14,7 @@ RFEstR = RandomForestRegressor()  # Estimator for Registered rents count
 RFEstC = RandomForestRegressor()  # for Casual users rents count
 
 # Please update the absolute path of the project files here
-absPath = '/home/hussein/Documents/bikes'
+absPath = '/home/hussein/Documents/bikes/'
 
 # Here we define a function for preprocessing the data
 
